@@ -27,7 +27,9 @@ app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
 os.makedirs(app.instance_path, exist_ok=True)
 
 # Detect environment
-DATABASE_URL = os.environ.get("DATABASE_URL")
+
+DATABASE_URL = os.environ.get("DATABASE_PUBLIC_URL") or os.environ.get("DATABASE_URL")
+
 IS_POSTGRES = bool(DATABASE_URL)
 
 # Local DB path for SQLite
