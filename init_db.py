@@ -1,13 +1,14 @@
 import os
 import sqlite3
 import psycopg2
-
+from psycopg2.extras import DictCursor
 from urllib.parse import urlparse
 from werkzeug.security import generate_password_hash
 
 # ------------------- Database Connection Setup -------------------
 DATABASE_URL = os.environ.get("DATABASE_URL")
 IS_POSTGRES = bool(DATABASE_URL)
+
 
 def get_connection():
     """Return a database connection (PostgreSQL on cloud, SQLite locally)."""
@@ -19,16 +20,15 @@ def get_connection():
             password=result.password,
             host=result.hostname,
             port=result.port,
-            sslmode="require"
+            sslmode="require",
+            cursor_factory=DictCursor
         )
-        print(f"🔗 Connected to {'PostgreSQL' if IS_POSTGRES else 'SQLite'} database")
-
+        print("🔗 Connected to PostgreSQL database")
     else:
         os.makedirs("instance", exist_ok=True)
         DB_PATH = os.path.join("instance", "tourism.db")
         conn = sqlite3.connect(DB_PATH)
-        print(f"🔗 Connected to {'PostgreSQL' if IS_POSTGRES else 'SQLite'} database")
-
+        print("🔗 Connected to SQLite database")
     return conn
 
 
