@@ -3,7 +3,6 @@ import os
 import sqlite3
 import psycopg2
 import psycopg2.extras
-from urllib.parse import urlparse
 from werkzeug.security import generate_password_hash
 
 # ---------------------------------------------------------------------
@@ -144,31 +143,17 @@ def init_db():
     """)
 
     # -----------------------------------------------------------------
-    #  Default admin (created if no admin exists)
+    #  Default admin (insert only if not exists)
     # -----------------------------------------------------------------
-    cur.execute("SELECT COUNT(*) FROM admins;")
-    result = cur.fetchone()
-    count = result[0] if isinstance(result, (tuple, list)) else result["count"] if isinstance(result, dict) else 0
-
-    if count == 0:
-        cur.execute(
-            f"INSERT INTO admins (fullname, email, password_hash) VALUES ({placeholder}, {placeholder}, {placeholder})",
-            ("Admin", "admin@demo.com", generate_password_hash("admin123"))
-        )
-        print("🧑‍💼 Default admin added (admin@demo.com / admin123)")
-
-    # -----------------------------------------------------------------
-    #  Demo packages (created if no packages exist)
-    # -----------------------------------------------------------------
-    # --- Default admin (insert only if not exists) ---
-    cur.execute("SELECT COUNT(*) FROM admins WHERE email = 'admin@demo.com';")
+    admin_check_query = "SELECT COUNT(*) FROM admins WHERE email = %s;" if IS_POSTGRES else "SELECT COUNT(*) FROM admins WHERE email = ?;"
+    cur.execute(admin_check_query, ("admin@demo.com",))
     result = cur.fetchone()
     count = 0
     if result:
         if isinstance(result, (tuple, list)):
-           count = result[0]
+            count = result[0]
         elif isinstance(result, dict):
-           count = result.get("count", 0)
+            count = result.get("count", 0)
 
     if count == 0:
         cur.execute(
@@ -179,6 +164,31 @@ def init_db():
     else:
         print("ℹ️ Default admin already exists — skipping insert.")
 
+    # -----------------------------------------------------------------
+    #  Demo packages (created if no packages exist)
+    # -----------------------------------------------------------------
+    cur.execute("SELECT COUNT(*) FROM packages;")
+    result = cur.fetchone()
+    pkg_count = 0
+    if result:
+        if isinstance(result, (tuple, list)):
+            pkg_count = result[0]
+        elif isinstance(result, dict):
+            pkg_count = result.get("count", 0)
+
+    if pkg_count == 0:
+        demo_packages = [
+            ("Beach Escape", "Goa", "3N/4D seaside fun", 12999, 4, "https://picsum.photos/seed/goa/800/500", "Available"),
+            ("Mountain Retreat", "Manali", "4N/5D snow experience", 17999, 5, "https://picsum.photos/seed/manali/800/500", "Available"),
+        ]
+        cur.executemany(
+            f"INSERT INTO packages (title, location, description, price, days, image_url, status) "
+            f"VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})",
+            demo_packages
+        )
+        print("🏖️ Demo packages inserted")
+    else:
+        print("ℹ️ Demo packages already exist — skipping insert.")
 
     # -----------------------------------------------------------------
     conn.commit()
