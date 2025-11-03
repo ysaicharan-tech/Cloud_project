@@ -1,44 +1,52 @@
+# ----------------------------- init_db.py -----------------------------
 import os
 import sqlite3
 import psycopg2
+import psycopg2.extras
 from urllib.parse import urlparse
 from werkzeug.security import generate_password_hash
 
-# ------------------- Database Connection Setup -------------------
+# ---------------------------------------------------------------------
+#  Detect environment and set flags
+# ---------------------------------------------------------------------
 DATABASE_URL = os.environ.get("DATABASE_URL")
 IS_POSTGRES = bool(DATABASE_URL)
 
+
 def get_connection():
-    """Return a database connection (PostgreSQL on cloud, SQLite locally)."""
+    """
+    Returns a database connection.
+    - Uses PostgreSQL on cloud (Railway/Render)
+    - Uses SQLite locally
+    """
     if IS_POSTGRES:
-        result = urlparse(DATABASE_URL)
+        # psycopg2 can connect directly using DATABASE_URL
         conn = psycopg2.connect(
-            database=result.path[1:],
-            user=result.username,
-            password=result.password,
-            host=result.hostname,
-            port=result.port,
+            DATABASE_URL,
             sslmode="require",
-            cursor_factory=psycopg2.extras.DictCursor  # ✅ fixed comma
+            cursor_factory=psycopg2.extras.DictCursor
         )
-        print("🔗 Connected to PostgreSQL database")
+        return conn
     else:
         os.makedirs("instance", exist_ok=True)
-        DB_PATH = os.path.join("instance", "tourism.db")
-        conn = sqlite3.connect(DB_PATH)
-        print("💾 Connected to local SQLite database")
-    return conn
+        db_path = os.path.join("instance", "tourism.db")
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON;")
+        return conn
 
 
-# ------------------- Database Initialization -------------------
 def init_db():
     conn = get_connection()
     cur = conn.cursor()
 
+    # Postgres vs SQLite compatible definitions
     id_column = "BIGSERIAL PRIMARY KEY" if IS_POSTGRES else "INTEGER PRIMARY KEY AUTOINCREMENT"
     placeholder = "%s" if IS_POSTGRES else "?"
 
-    # ---------------- Tables ----------------
+    # -----------------------------------------------------------------
+    #  Table creation — compatible with both SQLite and PostgreSQL
+    # -----------------------------------------------------------------
     cur.execute(f"""
     CREATE TABLE IF NOT EXISTS users (
         id {id_column},
@@ -135,32 +143,45 @@ def init_db():
     );
     """)
 
-    # ---------------- Default Admin ----------------
-    cur.execute("SELECT COUNT(*) FROM admins")
-    if cur.fetchone()[0] == 0:
+    # -----------------------------------------------------------------
+    #  Default admin (created if no admin exists)
+    # -----------------------------------------------------------------
+    cur.execute("SELECT COUNT(*) FROM admins;")
+    result = cur.fetchone()
+    count = result[0] if isinstance(result, (tuple, list)) else result["count"] if isinstance(result, dict) else 0
+
+    if count == 0:
         cur.execute(
-            f"INSERT INTO admins(fullname, email, password_hash) VALUES ({placeholder}, {placeholder}, {placeholder})",
+            f"INSERT INTO admins (fullname, email, password_hash) VALUES ({placeholder}, {placeholder}, {placeholder})",
             ("Admin", "admin@demo.com", generate_password_hash("admin123"))
         )
+        print("🧑‍💼 Default admin added (admin@demo.com / admin123)")
 
-    # ---------------- Demo Packages ----------------
-    cur.execute("SELECT COUNT(*) FROM packages")
-    if cur.fetchone()[0] == 0:
-        demo = [
+    # -----------------------------------------------------------------
+    #  Demo packages (created if no packages exist)
+    # -----------------------------------------------------------------
+    cur.execute("SELECT COUNT(*) FROM packages;")
+    result = cur.fetchone()
+    count = result[0] if isinstance(result, (tuple, list)) else result.get("count", 0) if isinstance(result, dict) else 0
+
+    if count == 0:
+        demo_packages = [
             ("Beach Escape", "Goa", "3N/4D seaside fun", 12999, 4, "https://picsum.photos/seed/goa/800/500", "Available"),
             ("Mountain Retreat", "Manali", "4N/5D snow experience", 17999, 5, "https://picsum.photos/seed/manali/800/500", "Available"),
         ]
         cur.executemany(
-            f"INSERT INTO packages(title, location, description, price, days, image_url, status) VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})",
-            demo
+            f"INSERT INTO packages (title, location, description, price, days, image_url, status) "
+            f"VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})",
+            demo_packages
         )
+        print("🏖️  Demo packages inserted")
 
+    # -----------------------------------------------------------------
     conn.commit()
     cur.close()
     conn.close()
     print("✅ Database initialized successfully!")
 
 
-# ------------------- Run directly -------------------
 if __name__ == "__main__":
     init_db()
