@@ -735,19 +735,27 @@ def admin_register():
             return redirect(url_for("admin_register"))
 
         try:
+            # Detect database type (Postgres vs SQLite)
+            from init_db import IS_POSTGRES
+
+            placeholder = "%s" if IS_POSTGRES else "?"
+            query = f"INSERT INTO admins (fullname, email, password_hash) VALUES ({placeholder}, {placeholder}, {placeholder})"
+
             db_execute(
-                "INSERT INTO admins (fullname, email, password_hash) VALUES (?, ?, ?)",
+                query,
                 (fullname, email, generate_password_hash(password)),
                 commit=True
             )
-            flash("New admin registered successfully!", "success")
+
+            flash("✅ New admin registered successfully!", "success")
             return redirect(url_for("admin_login"))
+
         except Exception as e:
-            # unique constraint or other DB error
-            print("Admin register error:", e)
-            flash("Email already exists or DB error.", "error")
+            print("⚠️ Admin register error:", e)
+            flash("Email already exists or a database error occurred.", "error")
 
     return render_template("admin_register.html")
+
 
 
 @app.route("/admin/logout")

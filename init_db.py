@@ -18,21 +18,26 @@ def get_connection():
     - Uses PostgreSQL on cloud (Railway/Render)
     - Uses SQLite locally
     """
-    if IS_POSTGRES:
-        # psycopg2 can connect directly using DATABASE_URL
-        conn = psycopg2.connect(
-            DATABASE_URL,
-            sslmode="require",
-            cursor_factory=psycopg2.extras.DictCursor
-        )
-        return conn
-    else:
-        os.makedirs("instance", exist_ok=True)
-        db_path = os.path.join("instance", "tourism.db")
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON;")
-        return conn
+    try:
+        if IS_POSTGRES:
+            # psycopg2 can connect directly using DATABASE_URL
+            conn = psycopg2.connect(
+                DATABASE_URL,
+                sslmode="require",
+                cursor_factory=psycopg2.extras.DictCursor
+            )
+            return conn
+    except Exception as e:
+        print(f"⚠️ PostgreSQL connection failed: {e}")
+        print("➡️ Falling back to local SQLite database.")
+
+    # SQLite fallback (for local or if PostgreSQL fails)
+    os.makedirs("instance", exist_ok=True)
+    db_path = os.path.join("instance", "tourism.db")
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON;")
+    return conn
 
 
 def init_db():
