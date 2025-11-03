@@ -2,6 +2,8 @@
 
 import os, sqlite3
 import psycopg2
+from psycopg2.extras import DictCursor
+
 from urllib.parse import urlparse
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, session, g, flash, abort
@@ -37,7 +39,8 @@ def get_db():
                 user=url.username,
                 password=url.password,
                 host=url.hostname,
-                port=url.port
+                port=url.port,
+                cursor_factory=DictCursor
             )
             g.db.autocommit = True
         else:

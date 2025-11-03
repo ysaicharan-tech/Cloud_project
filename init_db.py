@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import psycopg2
+
 from urllib.parse import urlparse
 from werkzeug.security import generate_password_hash
 
