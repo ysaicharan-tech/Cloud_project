@@ -81,7 +81,7 @@ def init_db():
     # -------------------- PACKAGES --------------------
     cur.execute(f"""
     CREATE TABLE IF NOT EXISTS packages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     title TEXT NOT NULL,
     location TEXT NOT NULL,
     description TEXT,
