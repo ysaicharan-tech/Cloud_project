@@ -5,33 +5,31 @@ import psycopg2
 import psycopg2.extras
 from werkzeug.security import generate_password_hash
 
-# ---------------------------------------------------------------------
-#  Detect environment and set flags
-# ---------------------------------------------------------------------
-DATABASE_URL = os.environ.get("DATABASE_URL")
+# Use same env names as app.py
+DATABASE_URL = os.environ.get("DATABASE_PUBLIC_URL") or os.environ.get("DATABASE_URL")
 IS_POSTGRES = bool(DATABASE_URL)
 
 
 def get_connection():
     """
-    Returns a database connection.
-    - Uses PostgreSQL on cloud (Railway/Render)
-    - Uses SQLite locally
+    Returns a DB connection:
+    - Postgres when DATABASE_URL present (uses DictCursor)
+    - SQLite otherwise (file at instance/tourism.db)
     """
-    try:
-        if IS_POSTGRES:
-            # psycopg2 can connect directly using DATABASE_URL
-            conn = psycopg2.connect(
-                DATABASE_URL,
-                sslmode="require",
-                cursor_factory=psycopg2.extras.DictCursor
-            )
+    # Try Postgres if configured
+    if IS_POSTGRES:
+        try:
+            url = DATABASE_URL
+            # Normalize old-style URLs (Heroku style)
+            if url.startswith("postgres://"):
+                url = url.replace("postgres://", "postgresql://", 1)
+            conn = psycopg2.connect(url, sslmode="require", cursor_factory=psycopg2.extras.DictCursor)
             return conn
-    except Exception as e:
-        print(f"⚠️ PostgreSQL connection failed: {e}")
-        print("➡️ Falling back to local SQLite database.")
+        except Exception as e:
+            print("⚠️ Could not connect to Postgres in init_db:", e)
+            print("➡️ Falling back to SQLite for init.")
 
-    # SQLite fallback (for local or if PostgreSQL fails)
+    # SQLite fallback
     os.makedirs("instance", exist_ok=True)
     db_path = os.path.join("instance", "tourism.db")
     conn = sqlite3.connect(db_path)
@@ -44,13 +42,10 @@ def init_db():
     conn = get_connection()
     cur = conn.cursor()
 
-    # Postgres vs SQLite compatible definitions
     id_column = "BIGSERIAL PRIMARY KEY" if IS_POSTGRES else "INTEGER PRIMARY KEY AUTOINCREMENT"
     placeholder = "%s" if IS_POSTGRES else "?"
 
-    # -----------------------------------------------------------------
-    #  Table creation — compatible with both SQLite and PostgreSQL
-    # -----------------------------------------------------------------
+    # Create tables (compatible with both DBs)
     cur.execute(f"""
     CREATE TABLE IF NOT EXISTS users (
         id {id_column},
@@ -59,10 +54,10 @@ def init_db():
         password_hash TEXT NOT NULL,
         phone TEXT,
         location TEXT,
+        address TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
-
     cur.execute(f"""
     CREATE TABLE IF NOT EXISTS admins (
         id {id_column},
@@ -75,7 +70,6 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
-
     cur.execute(f"""
     CREATE TABLE IF NOT EXISTS packages (
         id {id_column},
@@ -89,7 +83,6 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
-
     cur.execute(f"""
     CREATE TABLE IF NOT EXISTS admin_activity (
         id {id_column},
@@ -99,7 +92,6 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
-
     cur.execute(f"""
     CREATE TABLE IF NOT EXISTS bookings (
         id {id_column},
@@ -113,7 +105,6 @@ def init_db():
         booked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
-
     cur.execute(f"""
     CREATE TABLE IF NOT EXISTS payments (
         id {id_column},
@@ -125,7 +116,6 @@ def init_db():
         paid_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
-
     cur.execute(f"""
     CREATE TABLE IF NOT EXISTS feedback (
         id {id_column},
@@ -136,7 +126,6 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
-
     cur.execute(f"""
     CREATE TABLE IF NOT EXISTS cloud_activity (
         id {id_column},
@@ -147,18 +136,18 @@ def init_db():
     );
     """)
 
-    # -----------------------------------------------------------------
-    #  Default admin (insert only if not exists)
-    # -----------------------------------------------------------------
-    admin_check_query = "SELECT COUNT(*) FROM admins WHERE email = %s;" if IS_POSTGRES else "SELECT COUNT(*) FROM admins WHERE email = ?;"
-    cur.execute(admin_check_query, ("admin@demo.com",))
-    result = cur.fetchone()
-    count = 0
-    if result:
-        if isinstance(result, (tuple, list)):
-            count = result[0]
-        elif isinstance(result, dict):
-            count = result.get("count", 0)
+    # Insert default admin if not exists
+    try:
+        if IS_POSTGRES:
+            cur.execute("SELECT COUNT(*) as c FROM admins WHERE email = %s", ("admin@demo.com",))
+            res = cur.fetchone()
+            count = res["c"] if isinstance(res, dict) or hasattr(res, "keys") else res[0]
+        else:
+            cur.execute("SELECT COUNT(*) FROM admins WHERE email = ?", ("admin@demo.com",))
+            res = cur.fetchone()
+            count = res[0] if res else 0
+    except Exception:
+        count = 0
 
     if count == 0:
         cur.execute(
@@ -167,19 +156,20 @@ def init_db():
         )
         print("🧑‍💼 Default admin added (admin@demo.com / admin123)")
     else:
-        print("ℹ️ Default admin already exists — skipping insert.")
+        print("ℹ️ Default admin exists — skipping.")
 
-    # -----------------------------------------------------------------
-    #  Demo packages (created if no packages exist)
-    # -----------------------------------------------------------------
-    cur.execute("SELECT COUNT(*) FROM packages;")
-    result = cur.fetchone()
-    pkg_count = 0
-    if result:
-        if isinstance(result, (tuple, list)):
-            pkg_count = result[0]
-        elif isinstance(result, dict):
-            pkg_count = result.get("count", 0)
+    # Insert demo packages if none exist
+    try:
+        if IS_POSTGRES:
+            cur.execute("SELECT COUNT(*) as c FROM packages")
+            res = cur.fetchone()
+            pkg_count = res["c"] if isinstance(res, dict) or hasattr(res, "keys") else res[0]
+        else:
+            cur.execute("SELECT COUNT(*) FROM packages")
+            res = cur.fetchone()
+            pkg_count = res[0] if res else 0
+    except Exception:
+        pkg_count = 0
 
     if pkg_count == 0:
         demo_packages = [
@@ -187,15 +177,13 @@ def init_db():
             ("Mountain Retreat", "Manali", "4N/5D snow experience", 17999, 5, "https://picsum.photos/seed/manali/800/500", "Available"),
         ]
         cur.executemany(
-            f"INSERT INTO packages (title, location, description, price, days, image_url, status) "
-            f"VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})",
+            f"INSERT INTO packages (title, location, description, price, days, image_url, status) VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})",
             demo_packages
         )
         print("🏖️ Demo packages inserted")
     else:
-        print("ℹ️ Demo packages already exist — skipping insert.")
+        print("ℹ️ Demo packages exist — skipping.")
 
-    # -----------------------------------------------------------------
     conn.commit()
     cur.close()
     conn.close()
