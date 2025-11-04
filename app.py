@@ -441,7 +441,7 @@ def change_password():
         new_pwd = request.form.get("new_password")
         confirm_pwd = request.form.get("confirm_password")
         admin = db_execute("SELECT * FROM admins WHERE id = ?", (admin_id,), fetchone=True)
-        stored_hash = admin.get("password_hash") if admin else None
+        stored_hash = admin["password_hash"] if admin else None
         if stored_hash and not check_password_hash(stored_hash, current_pwd):
             flash("Incorrect current password.", "error")
         elif new_pwd != confirm_pwd:
