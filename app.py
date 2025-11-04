@@ -364,7 +364,6 @@ def my_bookings():
 
 
 # ---------------- Admin package CRUD & admin profile ----------------
-
 @app.route("/admin/add-package", methods=["GET", "POST"])
 @admin_required
 def add_package():
@@ -374,16 +373,25 @@ def add_package():
         description = request.form.get("description")
         price = request.form.get("price")
         days = request.form.get("days")
+        status = request.form.get("status") or "active"
         image_url = request.form.get("image_url") or "https://picsum.photos/seed/default/800/500"
+
+        # Validate required fields
         if not (title and location and price and days):
             flash("All fields marked * are required.", "error")
         else:
-            db_execute("INSERT INTO packages (title, location, description, price, days, image_url, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                       (title, location, description, price, days, image_url, "Available"), commit=True)
+            db_execute("""
+                INSERT INTO packages 
+                (title, location, description, price, days, image_url, status) 
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (title, location, description, price, days, image_url, status), commit=True)
+
             flash("Package added successfully!", "success")
             log_action(session.get("admin_id"), "admin", f"Added new package: {title}")
             return redirect(url_for("admin_packages"))
+    
     return render_template("add_package.html")
+
 
 
 @app.route("/admin/profile/edit", methods=["GET", "POST"])
@@ -403,13 +411,18 @@ def edit_admin_profile():
             return redirect(url_for("admin_profile"))
     return render_template("edit_admin_profile.html", admin=admin)
 
-
 @app.route("/admin/edit-package/<int:pid>", methods=["GET", "POST"])
 @admin_required
 def edit_package(pid):
     package = db_execute("SELECT * FROM packages WHERE id = ?", (pid,), fetchone=True)
     if not package:
         abort(404)
+
+    # ✅ Convert tuple to dict
+    if package and not isinstance(package, dict):
+        keys = ["id", "title", "location", "description", "price", "days", "image_url", "status"]
+        package = dict(zip(keys, package))
+
     if request.method == "POST":
         data = (
             request.form.get("title"),
@@ -429,7 +442,10 @@ def edit_package(pid):
         flash("Package updated successfully!", "success")
         log_action(session.get("admin_id"), "admin", f"Edited package ID {pid}")
         return redirect(url_for("admin_packages"))
+
     return render_template("edit_package.html", package=package)
+
+
 
 
 @app.route("/admin/change-password", methods=["GET", "POST"])
